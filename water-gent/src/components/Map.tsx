@@ -1,12 +1,12 @@
 'use client'
 
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet' // <--- useMap toegevoegd
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation' // <--- NIEUW: Om de URL uit te lezen
+import { useSearchParams } from 'next/navigation'
 import L from 'leaflet'
 import { supabase } from '@/lib/supabase'
 
-// Icon setup (standaard leaflet fix)
+// Icon setup
 const icon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -16,31 +16,31 @@ const icon = L.icon({
   popupAnchor: [1, -34],
 })
 
-// <--- NIEUW: Hulpcomponent om de kaart te laten vliegen naar het gezochte punt
+// Hulpcomponent voor vliegen naar punt
 function MapUpdater({ center }: { center: [number, number] | null }) {
   const map = useMap()
   useEffect(() => {
     if (center) {
-      map.flyTo(center, 18) // Zoom diep in op het punt (niveau 18)
+      map.flyTo(center, 18)
     }
   }, [center, map])
   return null
 }
 
 export default function Map() {
-  const searchParams = useSearchParams() // <--- NIEUW: De URL parameters ophalen
-  const urlId = searchParams.get('id') // <--- NIEUW: Haal specifiek '?id=...' op
+  const searchParams = useSearchParams()
+  const urlId = searchParams.get('id') // Haal ID uit URL (?id=...)
 
   const [waterPoints, setWaterPoints] = useState<any[]>([])
   const [issueOptions, setIssueOptions] = useState<any[]>([]) 
-  const [mapCenter, setMapCenter] = useState<[number, number] | null>(null) // <--- NIEUW: Om de kaart te sturen
+  const [mapCenter, setMapCenter] = useState<[number, number] | null>(null)
 
   // State voor het formulier
   const [selectedPoint, setSelectedPoint] = useState<any>(null) 
   const [issueType, setIssueType] = useState('') 
   const [isSubmitting, setIsSubmitting] = useState(false) 
 
-  // Data ophalen: Waterpunten + Fonteinen + ISSUE TYPES
+  // Data ophalen en verwerken
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -51,28 +51,62 @@ export default function Map() {
 
         const data1 = await res1.json()
 
-        
+        // Issue opties
         if (resOptions.data) {
             setIssueOptions(resOptions.data)
             if (resOptions.data.length > 0) setIssueType(resOptions.data[0].value)
         }
 
-        const allPoints = data1.features
-        setWaterPoints(allPoints)
+        // --- HIER IS DE BELANGRIJKE WIJZIGING ---
+        // We passen EXACT dezelfde logica toe als in de Admin pagina om IDs te matchen
+        const processedPoints = (data1.features || []).map((feature: any) => {
+            const props = feature.properties;
+            let finalId = ""; 
 
-        // <--- NIEUW: Checken of er een ID in de URL zat
+            // 1. Check objectid_1 (De echte unieke ID)
+            if (props.objectid_1 && String(props.objectid_1) !== "0") {
+                finalId = String(props.objectid_1);
+            }
+            // 2. Check crmid
+            else if (props.crmid) {
+                finalId = String(props.crmid);
+            }
+            // 3. Check gewone objectid (alleen als geen 0)
+            else if (props.objectid && String(props.objectid) !== "0") {
+                finalId = String(props.objectid);
+            }
+            // 4. Check recordid
+            else if (props.recordid) {
+                finalId = props.recordid;
+            }
+            // 5. Fallback Coördinaten
+            else if (feature.geometry?.coordinates) {
+                 const [lat, lon] = feature.geometry.coordinates;
+                 finalId = `loc-${String(lat).replace('.','').slice(0,8)}-${String(lon).replace('.','').slice(0,8)}`;
+            }
+
+            if (!finalId) finalId = `unknown-${Math.random()}`;
+
+            // Voeg fixedId toe aan properties
+            return {
+                ...feature,
+                properties: { ...props, fixedId: finalId }
+            };
+        });
+
+        setWaterPoints(processedPoints)
+
+        // Checken of er een ID in de URL zat en matchen met onze nieuwe fixedId
         if (urlId) {
-            const found = allPoints.find((p: any) => {
-               // We checken alle mogelijke ID velden uit de data
-               const pId = p.properties.id || p.properties.objectid || p.properties.agent || p.properties.recordid;
-               return String(pId) === urlId;
-            })
+            // Nu is het simpel: vergelijk urlId met fixedId
+            const found = processedPoints.find((p: any) => p.properties.fixedId === urlId);
   
             if (found) {
               console.log("📍 Punt gevonden via QR code:", found.properties.naam)
-              setSelectedPoint(found) // Open direct de modal!
-              // Zet het nieuwe centrum zodat de MapUpdater de kaart kan bewegen
+              setSelectedPoint(found) 
               setMapCenter([found.geometry.coordinates[1], found.geometry.coordinates[0]])
+            } else {
+              console.warn("⚠️ Wel ID in URL, maar geen punt gevonden:", urlId)
             }
         }
 
@@ -81,7 +115,7 @@ export default function Map() {
       }
     }
     fetchData()
-  }, [urlId]) // <--- NIEUW: Voer dit ook uit als de URL verandert
+  }, [urlId])
 
   const handleSubmitReport = async () => {
     if (!selectedPoint) return
@@ -89,16 +123,10 @@ export default function Map() {
 
     const props = selectedPoint.properties
 
-    // 1. ID Bepalen
-    const rawId = 
-      props.id || 
-      props.objectid || 
-      props.agent || 
-      props.recordid;
-      
-    const puntId = rawId ? String(rawId) : `temp-${Date.now()}`;
+    // Gebruik de fixedId die we al berekend hebben!
+    const puntId = props.fixedId || "onbekend";
 
-    // 2. Naam Bepalen 
+    // Naam Bepalen 
     const puntNaam = 
       props.naam || 
       props.beschrijving || 
@@ -106,7 +134,7 @@ export default function Map() {
       props.locatie || 
       "Naamloos punt";
 
-    // 3. Adres Bepalen 
+    // Adres Bepalen 
     const puntAdres = 
       props.straatnaam ? `${props.straatnaam} ${props.huisnummer || ''}` :
       props.adres || 
@@ -118,7 +146,7 @@ export default function Map() {
     try {
       const { error } = await supabase.from('reports').insert([
         {
-          waterpunt_id: puntId,
+          waterpunt_id: puntId, // Hier sturen we nu de juiste ID mee
           issue_type: issueType,
           description: descriptionText,
         }
@@ -141,15 +169,14 @@ export default function Map() {
       <MapContainer center={[51.0543, 3.7174]} zoom={13} style={{ height: "100%", width: "100%" }}>
         <TileLayer attribution='&copy; OSM' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         
-        {/* <--- NIEUW: Dit zorgt dat de kaart beweegt naar het QR punt */}
         <MapUpdater center={mapCenter} />
 
         {waterPoints.map((point: any) => (
           <Marker 
-            key={point.properties.id || Math.random()} 
+            // Gebruik fixedId als key, dat is veel stabieler dan random
+            key={point.properties.fixedId || Math.random()} 
             position={[point.geometry.coordinates[1], point.geometry.coordinates[0]]} 
             icon={icon}
-            // <--- NIEUW: Zorgen dat klikken op de pin hetzelfde doet als de QR scan
             eventHandlers={{
                 click: () => setSelectedPoint(point)
             }}
@@ -157,11 +184,10 @@ export default function Map() {
         ))}
       </MapContainer>
 
-      {/* MODAL (Je bestaande code) */}
+      {/* MODAL */}
       {selectedPoint && (
         <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
           <div className="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl relative">
-             {/* <--- NIEUW: Kruisje om te sluiten toegevoegd voor UX */}
              <button 
                 onClick={() => setSelectedPoint(null)}
                 className="absolute top-2 right-2 text-gray-500 hover:text-black font-bold text-xl px-2"
@@ -172,6 +198,8 @@ export default function Map() {
             <h2 className="text-xl font-bold mb-4">Melding maken</h2>
             <p className="mb-4 text-sm text-gray-600">
               Wat is er mis met: <strong>{selectedPoint.properties.naam || selectedPoint.properties.beschrijving}</strong>?
+              <br/>
+              <span className="text-xs text-gray-400 font-mono">ID: {selectedPoint.properties.fixedId}</span>
             </p>
 
             <div className="space-y-2 mb-6">

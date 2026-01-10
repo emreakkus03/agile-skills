@@ -44,21 +44,20 @@ export default function Map() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [res1, res2, resOptions] = await Promise.all([
+        const [res1, resOptions] = await Promise.all([
           fetch('https://data.stad.gent/api/explore/v2.1/catalog/datasets/drinkwaterplekken-gent/exports/geojson'),
-          fetch('https://data.stad.gent/api/explore/v2.1/catalog/datasets/publiek-sanitair-gent/exports/geojson'),
           supabase.from('issue_types').select('*') 
         ])
 
         const data1 = await res1.json()
-        const data2 = await res2.json()
+
         
         if (resOptions.data) {
             setIssueOptions(resOptions.data)
             if (resOptions.data.length > 0) setIssueType(resOptions.data[0].value)
         }
 
-        const allPoints = [...data1.features, ...data2.features]
+        const allPoints = data1.features
         setWaterPoints(allPoints)
 
         // <--- NIEUW: Checken of er een ID in de URL zat

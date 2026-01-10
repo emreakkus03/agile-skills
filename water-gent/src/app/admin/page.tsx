@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase,IssueReport,LocationFeature, LocationProperties, GeoJsonResponse, SelectedQrPoint, VERCEL} from '@/lib/supabase'
+import { supabase,IssueReport,LocationFeature, LocationProperties, GeoJsonResponse, SelectedQrPoint} from '@/lib/supabase'
 import QRCode from "react-qr-code"
 
-const BASE_URL = VERCEL;
+const BASE_URL = process.env.VERCEL_URL || 'https://agile-skills.vercel.app'
 
 export default function AdminPage() {
     const [issueReports, setIssueReports] = useState<IssueReport[]>([])

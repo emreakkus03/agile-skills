@@ -130,13 +130,26 @@ export default function Map() {
   }
 
   // <--- NIEUW: Functie voor Google Maps
-  const openGoogleMaps = () => {
-      if(!selectedPoint) return;
-      // GeoJSON is [Longitude, Latitude], maar Google Maps wil [Latitude, Longitude]
-      const [lng, lat] = selectedPoint.geometry.coordinates;
-      const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`;
-      window.open(url, '_blank');
+const openGoogleMaps = async () => {
+  if (!selectedPoint) return;
+
+  const props = selectedPoint.properties;
+  const waterpointId = props.fixedId;
+
+  // 1️⃣ LOG USAGE (DIT MISSTE)
+  const { error } = await supabase
+    .from("waterpoint_usage")
+    .insert({ waterpoint_id: waterpointId });
+
+  if (error) {
+    console.error("Usage log error:", error);
   }
+
+  // 2️⃣ OPEN GOOGLE MAPS
+  const [lng, lat] = selectedPoint.geometry.coordinates;
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`;
+  window.open(url, "_blank");
+};
 
   return (
     <>

@@ -7,7 +7,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
 
 
 export interface IssueReport {
-  id: string
+  id: number
   created_at: string
   issue_type: string
   description: string
@@ -44,4 +44,10 @@ export interface SelectedQrPoint {
   id: string
   naam: string
   adres: string
+}
+
+export interface WaterpointUsage {
+  id: number
+  waterpoint_id: string
+  used_at: string
 }
